@@ -24,7 +24,7 @@ def create_quality_assurance_team(model_client, human_input_function):
 
     inner_team_b = RoundRobinGroupChat(
         participants=[reviewer_agent, user_proxy_inner_b],
-        termination_condition=inner_termination_b,
+        termination_condition=TextMentionTermination(text="QUALITY_APPROVED"),
         max_turns=3
     )
 

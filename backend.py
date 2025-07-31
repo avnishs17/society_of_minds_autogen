@@ -18,23 +18,12 @@ async def root():
     """Serve the chat interface HTML file."""
     return FileResponse("ui/index.html")
 
-async def send_message(websocket: WebSocket, source: str, content: str, msg_type: str = "TextMessage"):
-    """Helper function to send a message to the client."""
-    message = {
-        "source": source,
-        "content": content,
-        "type": msg_type,
-    }
-    await websocket.send_json(message)
-
 @app.websocket("/ws/chat")
 async def chat(websocket: WebSocket):
     await websocket.accept()
 
-    # This single function will handle all user input requests, pausing until a message is received.
+    # A single, simple input function that only waits for the next message from the client.
     async def get_user_input(prompt: str, *args, **kwargs) -> str:
-        # The autogen framework sends a UserInputRequestedEvent automatically.
-        # We just need to wait for the user's response.
         try:
             data = await websocket.receive_json()
             message = TextMessage.model_validate(data)
@@ -44,35 +33,76 @@ async def chat(websocket: WebSocket):
             raise
 
     try:
-        # The first message from the user starts the task.
         initial_data = await websocket.receive_json()
         task = initial_data["content"]
 
         model_client = OpenAIChatCompletionClient(model=MODEL_NAME, api_key=API_KEY)
         
-        # Pass the single, correct input function to the team initializer.
+        # Pass the single, correct input function to all user proxy agents.
         outer_team = create_outer_team_coordination(
             model_client, get_user_input, get_user_input, get_user_input
         )
 
-        # Stream the conversation, sending each message to the client.
         async for message in outer_team.run_stream(task=task):
             if isinstance(message, TaskResult):
                 continue
+
+            # ** THE FIX **
+            # Intercept the UserInputRequestedEvent and replace its generic content
+            # with the specific, instructional prompt needed by the UI.
+            if isinstance(message, UserInputRequestedEvent):
+                source_name = message.source.name if hasattr(message.source, 'name') else str(message.source)
+                if source_name == 'Human_ContentOverseer':
+                    message.content = """
+==================================================
+ HUMAN INPUT - Content Team
+==================================================
+Options:
+1. Type 'APPROVE' to approve
+2. Provide feedback for improvements
+--------------------------------------------------
+"""
+                elif source_name == 'Human_QualityOverseer':
+                    message.content = """
+==================================================
+ HUMAN INPUT - Quality Team
+==================================================
+Options:
+1. Type 'QUALITY_APPROVED' to approve
+2. Provide quality feedback
+--------------------------------------------------
+"""
+                elif source_name == 'Human_ProjectOverseer':
+                    message.content = """
+============================================================
+ HUMAN INPUT - Outer Team Coordination
+============================================================
+Options:
+1. Type 'FINAL_APPROVAL' for final approval
+2. Type 'REJECT_OUTPUT' to reject and rework
+3. Provide coordination feedback
+------------------------------------------------------------
+"""
             
-            # The message from the framework is already a rich object. We can pass it directly.
-            # The frontend will handle rendering based on the message type.
-            # Use mode='json' to ensure complex types like datetime are serialized to strings.
+            # Now, send the (potentially modified) message to the client.
             await websocket.send_json(message.model_dump(mode='json'))
 
-        await send_message(websocket, "system", "Task completed.")
+        await websocket.send_json({
+            "source": "system",
+            "content": "Task completed.",
+            "type": "TextMessage"
+        })
 
     except WebSocketDisconnect:
         logger.info("Client disconnected.")
     except Exception as e:
         app_exc = SoMApplicationException(e, sys)
         logger.error("An error occurred during agent execution", error=str(app_exc))
-        await send_message(websocket, "system", f"An error occurred: {app_exc}", msg_type="error")
+        await websocket.send_json({
+            "source": "system",
+            "content": f"An error occurred: {app_exc}",
+            "type": "error"
+        })
     finally:
         if websocket.client_state != WebSocketDisconnect:
             await websocket.close()
