@@ -127,16 +127,18 @@
 
             ws.onmessage = function (event) {
                 const message = JSON.parse(event.data);
-                
-                // Display all messages. The source is now nested in the agent object.
-                const source = message.source ? (message.source.name || message.source) : 'system';
-                displayMessage(message.content, source);
 
                 if (message.type === 'UserInputRequestedEvent') {
-                    // The event itself contains the prompt. We display it and then enable input.
+                    // For input requests, display the content with a special source label and style.
+                    displayMessage(message.content, 'System Guide'); 
                     enableInput("Your response...");
-                } else if (message.content === "Task completed.") {
-                    ws.close();
+                } else {
+                    // For all other messages, use the original source.
+                    const source = message.source ? (message.source.name || message.source) : 'system';
+                    displayMessage(message.content, source);
+                    if (message.content === "Task completed.") {
+                        ws.close();
+                    }
                 }
             };
 
@@ -189,10 +191,13 @@
             let displaySource = source;
             let roleClass = 'assistant'; // Default class
 
-            // Check if the source is the user or one of the user proxy agents
+            // Standardize display for user messages and system guides
             if (source.toLowerCase().includes('user') || source.toLowerCase().includes('human_')) {
                 roleClass = 'user';
-                displaySource = 'user'; // Standardize the display name
+                displaySource = 'user';
+            } else if (source === 'System Guide') {
+                roleClass = 'system'; // Use system styling for the guide
+                displaySource = 'System Guide';
             } else if (source.toLowerCase() === 'system' || source.toLowerCase() === 'error') {
                 roleClass = source.toLowerCase();
             }
