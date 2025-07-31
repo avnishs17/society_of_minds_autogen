@@ -163,18 +163,20 @@
             const message = input.value;
             if (!message) return;
 
+            const payload = JSON.stringify({ content: message, source: 'user' });
+
             if (!ws || ws.readyState !== WebSocket.OPEN) {
                 connect();
                 // Wait for the connection to open before sending
                 ws.onopen = () => {
-                    ws.send(JSON.stringify({ content: message, source: 'user' }));
-                    displayMessage(message, 'user');
+                    ws.send(payload);
+                    // DO NOT display the message here. Wait for the backend to echo it.
                     input.value = '';
                     disableInput("Agents are collaborating...");
                 };
             } else {
-                ws.send(JSON.stringify({ content: message, source: 'user' }));
-                displayMessage(message, 'user');
+                ws.send(payload);
+                // DO NOT display the message here. Wait for the backend to echo it.
                 input.value = '';
                 disableInput("Agents are collaborating...");
             }
@@ -184,9 +186,13 @@
             const messagesContainer = document.getElementById('messages');
             const messageElement = document.createElement('div');
             
+            let displaySource = source;
             let roleClass = 'assistant'; // Default class
-            if (source.toLowerCase() === 'user') {
+
+            // Check if the source is the user or one of the user proxy agents
+            if (source.toLowerCase().includes('user') || source.toLowerCase().includes('human_')) {
                 roleClass = 'user';
+                displaySource = 'user'; // Standardize the display name
             } else if (source.toLowerCase() === 'system' || source.toLowerCase() === 'error') {
                 roleClass = source.toLowerCase();
             }
@@ -195,7 +201,7 @@
             
             const labelElement = document.createElement('span');
             labelElement.className = 'label';
-            labelElement.textContent = source;
+            labelElement.textContent = displaySource;
 
             const contentElement = document.createElement('div');
             contentElement.className = 'content';
