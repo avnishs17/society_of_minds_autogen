@@ -1,0 +1,14 @@
+autogen-agentchat
+autogen-core
+autogen-ext[openai]
+python-dotenv
+tiktoken
+ipykernel
+streamlit
+asyncio
+structlog
+fastapi
+uvicorn
+websockets
+
+-e .

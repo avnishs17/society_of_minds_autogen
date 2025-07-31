@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Society of Mind Feedback System</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            height: 100vh;
+            background-color: #f4f4f9;
+            box-sizing: border-box;
+        }
+
+        #chat-container {
+            width: 100%;
+            max-width: 800px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 40px);
+        }
+
+        #messages {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 20px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            padding: 10px 15px;
+            border-radius: 18px;
+            max-width: 75%;
+            line-height: 1.4;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .message .label {
+            font-weight: bold;
+            margin-bottom: 5px;
+            font-size: 0.85em;
+        }
+
+        .message.user {
+            background-color: #007bff;
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 4px;
+        }
+
+        .message.system, .message.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            align-self: center;
+            text-align: center;
+            width: 100%;
+            max-width: 100%;
+        }
+        
+        .message.assistant {
+            background-color: #e9ecef;
+            color: #495057;
+            align-self: flex-start;
+            border-bottom-left-radius: 4px;
+        }
+
+        #input-container {
+            display: flex;
+            padding: 20px;
+            border-top: 1px solid #ddd;
+        }
+
+        #input-container input {
+            flex: 1;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 20px;
+            margin-right: 10px;
+        }
+
+        #input-container button {
+            padding: 12px 25px;
+            border: none;
+            background-color: #007bff;
+            color: #fff;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        #input-container button:hover {
+            background-color: #0056b3;
+        }
+
+        #input-container input:disabled,
+        #input-container button:disabled {
+            background-color: #e9ecef;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="chat-container">
+        <div id="messages"></div>
+        <div id="input-container">
+            <input type="text" id="message-input" placeholder="Enter your task to begin...">
+            <button id="send-button" onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        let ws;
+
+        function connect() {
+            ws = new WebSocket('ws://localhost:8000/ws/chat');
+
+            ws.onmessage = function (event) {
+                const message = JSON.parse(event.data);
+                
+                // Display all messages. The source is now nested in the agent object.
+                const source = message.source ? (message.source.name || message.source) : 'system';
+                displayMessage(message.content, source);
+
+                if (message.type === 'UserInputRequestedEvent') {
+                    // The event itself contains the prompt. We display it and then enable input.
+                    enableInput("Your response...");
+                } else if (message.content === "Task completed.") {
+                    ws.close();
+                }
+            };
+
+            ws.onerror = function(error) {
+                displayMessage("WebSocket error occurred. Please refresh the page.", 'error');
+                enableInput("Enter your task to begin...");
+            };
+
+            ws.onclose = function() {
+                displayMessage("Connection closed. You can start a new task.", 'system');
+                enableInput("Enter your task to begin...");
+                ws = null; // Reset ws so a new connection can be made
+            };
+        }
+
+        document.getElementById('message-input').addEventListener('keydown', function (event) {
+            if (event.key === 'Enter' && !event.target.disabled) {
+                sendMessage();
+            }
+        });
+
+        function sendMessage() {
+            const input = document.getElementById('message-input');
+            const message = input.value;
+            if (!message) return;
+
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                connect();
+                // Wait for the connection to open before sending
+                ws.onopen = () => {
+                    ws.send(JSON.stringify({ content: message, source: 'user' }));
+                    displayMessage(message, 'user');
+                    input.value = '';
+                    disableInput("Agents are collaborating...");
+                };
+            } else {
+                ws.send(JSON.stringify({ content: message, source: 'user' }));
+                displayMessage(message, 'user');
+                input.value = '';
+                disableInput("Agents are collaborating...");
+            }
+        }
+
+        function displayMessage(content, source) {
+            const messagesContainer = document.getElementById('messages');
+            const messageElement = document.createElement('div');
+            
+            let roleClass = 'assistant'; // Default class
+            if (source.toLowerCase() === 'user') {
+                roleClass = 'user';
+            } else if (source.toLowerCase() === 'system' || source.toLowerCase() === 'error') {
+                roleClass = source.toLowerCase();
+            }
+            
+            messageElement.className = `message ${roleClass}`;
+            
+            const labelElement = document.createElement('span');
+            labelElement.className = 'label';
+            labelElement.textContent = source;
+
+            const contentElement = document.createElement('div');
+            contentElement.className = 'content';
+            // Use innerHTML to render newlines correctly
+            contentElement.innerHTML = content.replace(/\n/g, '<br>');
+
+            messageElement.appendChild(labelElement);
+            messageElement.appendChild(contentElement);
+            messagesContainer.appendChild(messageElement);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        function disableInput(placeholder) {
+            const input = document.getElementById('message-input');
+            const button = document.getElementById('send-button');
+            input.disabled = true;
+            button.disabled = true;
+            input.placeholder = placeholder;
+        }
+
+        function enableInput(placeholder) {
+            const input = document.getElementById('message-input');
+            const button = document.getElementById('send-button');
+            input.disabled = false;
+            button.disabled = false;
+            input.placeholder = placeholder;
+            input.focus();
+        }
+    </script>
+</body>
+
+</html>
