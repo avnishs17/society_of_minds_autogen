@@ -1,20 +1,16 @@
-import logging
-import os
+import sys
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from autogen_agentchat.messages import TextMessage
 from src.som.team_setup import create_outer_team_coordination
 from autogen_ext.models.openai import OpenAIChatCompletionClient
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
-api_key = os.getenv('GOOGLE_API_KEY')
+from logger.custom_logger import CustomLogger
+from custom_exception.custom_exception import SoMApplicationException
+from config.constants import MODEL_NAME, API_KEY
 
 # Initialize logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+logger = CustomLogger().get_logger(__name__)
 
 app = FastAPI()
 
@@ -60,7 +56,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     try:
         # Initialize the model client
-        model_client = OpenAIChatCompletionClient(model='gemini-1.5-flash', api_key=api_key)
+        model_client = OpenAIChatCompletionClient(model=MODEL_NAME, api_key=API_KEY)
         
         # Create the teams
         outer_team, _, _ = await create_outer_team_coordination(model_client, human_input_function)
@@ -97,12 +93,13 @@ async def websocket_endpoint(websocket: WebSocket):
         })
 
     except WebSocketDisconnect:
-        logger.info("Client disconnected.")
+        logger.info("client_disconnected")
     except Exception as e:
-        logger.error(f"An error occurred: {e}", exc_info=True)
+        som_exception = SoMApplicationException(e, sys)
+        logger.error("error_occurred", error=str(som_exception))
         await websocket.send_json({
             "type": "error",
-            "content": str(e)
+            "content": str(som_exception)
         })
     finally:
         try:
