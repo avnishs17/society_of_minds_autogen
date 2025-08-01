@@ -5,12 +5,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from autogen_agentchat.messages import TextMessage
 from src.som.team_setup import create_outer_team_coordination
 from autogen_ext.models.openai import OpenAIChatCompletionClient
-from logger.custom_logger import CustomLogger
+from logger import logger
 from custom_exception.custom_exception import SoMApplicationException
 from config.constants import MODEL_NAME, API_KEY
 
-# Initialize logging
-logger = CustomLogger().get_logger(__name__)
 
 app = FastAPI()
 
