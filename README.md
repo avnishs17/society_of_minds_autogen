@@ -48,10 +48,10 @@ graph TD
     HPO -->|Reject/Feedback| CTS
     
     %% Styling
-    classDef humanNode fill:#ffeb3b,stroke:#f57f17,stroke-width:3px
-    classDef agentNode fill:#4caf50,stroke:#2e7d32,stroke-width:2px
-    classDef teamNode fill:#2196f3,stroke:#1565c0,stroke-width:2px
-    classDef startEnd fill:#9c27b0,stroke:#6a1b9a,stroke-width:2px
+    classDef humanNode fill:#ff7043,stroke:#d84315,stroke-width:3px,color:#ffffff
+    classDef agentNode fill:#4caf50,stroke:#2e7d32,stroke-width:2px,color:#ffffff
+    classDef teamNode fill:#2196f3,stroke:#1565c0,stroke-width:2px,color:#ffffff
+    classDef startEnd fill:#9c27b0,stroke:#6a1b9a,stroke-width:2px,color:#ffffff
     
     class HCO,HPO humanNode
     class W,E,R agentNode
