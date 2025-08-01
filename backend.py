@@ -1,111 +1,103 @@
+import asyncio
+import json
+import logging
+import os
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
-import uvicorn
+from fastapi.middleware.cors import CORSMiddleware
+from autogen_agentchat.messages import TextMessage
+from src.som.team_setup import create_outer_team_coordination
 from autogen_ext.models.openai import OpenAIChatCompletionClient
-from config.constants import API_KEY, MODEL_NAME
-from src.som.initializer import create_outer_team_coordination
-from logger.custom_logger import CustomLogger
-import sys
-from custom_exception.custom_exception import SoMApplicationException
-from autogen_agentchat.messages import TextMessage, UserInputRequestedEvent
-from autogen_agentchat.base import TaskResult
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+api_key = os.getenv('GOOGLE_API_KEY')
+
+# Initialize logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
-logger = CustomLogger().get_logger(__name__)
+
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/")
-async def root():
-    """Serve the chat interface HTML file."""
-    return FileResponse("ui/index.html")
+async def read_root():
+    """Serve the main HTML file."""
+    return FileResponse('ui/index.html')
 
 @app.websocket("/ws/chat")
-async def chat(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+    logger.info("WebSocket connection accepted.")
 
-    # A single, simple input function that only waits for the next message from the client.
-    async def get_user_input(prompt: str, *args, **kwargs) -> str:
-        try:
-            data = await websocket.receive_json()
-            message = TextMessage.model_validate(data)
-            return message.content
-        except WebSocketDisconnect:
-            logger.info("Client disconnected while waiting for user input.")
-            raise
+    async def human_input_function(prompt: str, cancellation_token=None):
+        """Function to get human input from the WebSocket."""
+        logger.info(f"Requesting human input for prompt: {prompt}")
 
-    try:
-        initial_data = await websocket.receive_json()
-        task = initial_data["content"]
-
-        model_client = OpenAIChatCompletionClient(model=MODEL_NAME, api_key=API_KEY)
-        
-        # Pass the single, correct input function to all user proxy agents.
-        outer_team = create_outer_team_coordination(
-            model_client, get_user_input, get_user_input, get_user_input
-        )
-
-        async for message in outer_team.run_stream(task=task):
-            if isinstance(message, TaskResult):
-                continue
-
-            # ** THE FIX **
-            # Intercept the UserInputRequestedEvent and replace its generic content
-            # with the specific, instructional prompt needed by the UI.
-            if isinstance(message, UserInputRequestedEvent):
-                source_name = message.source.name if hasattr(message.source, 'name') else str(message.source)
-                if source_name == 'Human_ContentOverseer':
-                    message.content = """
-==================================================
- HUMAN INPUT - Content Team
-==================================================
-Options:
-1. Type 'APPROVE' to approve
-2. Provide feedback for improvements
---------------------------------------------------
-"""
-                elif source_name == 'Human_QualityOverseer':
-                    message.content = """
-==================================================
- HUMAN INPUT - Quality Team
-==================================================
-Options:
-1. Type 'QUALITY_APPROVED' to approve
-2. Provide quality feedback
---------------------------------------------------
-"""
-                elif source_name == 'Human_ProjectOverseer':
-                    message.content = """
-============================================================
- HUMAN INPUT - Outer Team Coordination
-============================================================
-Options:
-1. Type 'FINAL_APPROVAL' for final approval
-2. Type 'REJECT_OUTPUT' to reject and rework
-3. Provide coordination feedback
-------------------------------------------------------------
-"""
-            
-            # Now, send the (potentially modified) message to the client.
-            await websocket.send_json(message.model_dump(mode='json'))
+        # Determine which team is asking for input based on the prompt
+        if "ContentTeam" in prompt:
+            team_name = "Content Creation Team"
+            instructions = "Enter 'APPROVE' to approve the content, or provide feedback for revision."
+        elif "QualityTeam" in prompt:
+            team_name = "Quality Assurance Team"
+            instructions = "Enter 'APPROVE' to approve the quality, or provide feedback."
+        else:
+            team_name = "Project Overseer"
+            instructions = "Enter 'FINAL_APPROVAL' to approve the project, or provide feedback."
 
         await websocket.send_json({
-            "source": "system",
-            "content": "Task completed.",
-            "type": "TextMessage"
+            "type": "human_input_request",
+            "content": f"--- {team_name} ---\n{instructions}"
         })
+        data = await websocket.receive_json()
+        return data["content"]
+
+    try:
+        # Initialize the model client
+        model_client = OpenAIChatCompletionClient(model='gemini-1.5-flash', api_key=api_key)
+        
+        # Create the teams
+        outer_team, _, _ = await create_outer_team_coordination(model_client, human_input_function)
+
+        # Wait for the initial message from the user
+        initial_data = await websocket.receive_json()
+        task = initial_data.get("content")
+        logger.info(f"Received initial task: {task}")
+
+        # Stream the conversation
+        async for message in outer_team.run_stream(task=task):
+            if isinstance(message, TextMessage):
+                source = message.source if hasattr(message, 'source') and message.source else "System"
+                content = message.content.strip()
+                if content:
+                    logger.info(f"Sending message from {source}: {content}")
+                    await websocket.send_json({"type": "message", "source": source, "content": content})
 
     except WebSocketDisconnect:
         logger.info("Client disconnected.")
     except Exception as e:
-        app_exc = SoMApplicationException(e, sys)
-        logger.error("An error occurred during agent execution", error=str(app_exc))
+        logger.error(f"An error occurred: {e}", exc_info=True)
         await websocket.send_json({
-            "source": "system",
-            "content": f"An error occurred: {app_exc}",
-            "type": "error"
+            "type": "error",
+            "content": str(e)
         })
     finally:
-        if websocket.client_state != WebSocketDisconnect:
+        try:
             await websocket.close()
+            logger.info("WebSocket connection closed.")
+        except RuntimeError:
+            pass # Connection already closed
 
 if __name__ == "__main__":
+    import uvicorn
+    logger.info("Starting server...")
     uvicorn.run(app, host="0.0.0.0", port=8000)

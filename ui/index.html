@@ -1,241 +1,94 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Society of Mind Feedback System</title>
+    <title>AutoGen SoM Feedback</title>
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            justify-content: center;
-            height: 100vh;
-            background-color: #f4f4f9;
-            box-sizing: border-box;
-        }
-
-        #chat-container {
-            width: 100%;
-            max-width: 800px;
-            background-color: #fff;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-            display: flex;
-            flex-direction: column;
-            height: calc(100vh - 40px);
-        }
-
-        #messages {
-            flex-grow: 1;
-            overflow-y: auto;
-            padding: 20px;
-            border-bottom: 1px solid #ddd;
-        }
-
-        .message {
-            margin-bottom: 15px;
-            padding: 10px 15px;
-            border-radius: 18px;
-            max-width: 75%;
-            line-height: 1.4;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .message .label {
-            font-weight: bold;
-            margin-bottom: 5px;
-            font-size: 0.85em;
-        }
-
-        .message.user {
-            background-color: #007bff;
-            color: white;
-            align-self: flex-end;
-            border-bottom-right-radius: 4px;
-        }
-
-        .message.system, .message.error {
-            background-color: #f8d7da;
-            color: #721c24;
-            align-self: center;
-            text-align: center;
-            width: 100%;
-            max-width: 100%;
-        }
-        
-        .message.assistant {
-            background-color: #e9ecef;
-            color: #495057;
-            align-self: flex-start;
-            border-bottom-left-radius: 4px;
-        }
-
-        #input-container {
-            display: flex;
-            padding: 20px;
-            border-top: 1px solid #ddd;
-        }
-
-        #input-container input {
-            flex: 1;
-            padding: 12px;
-            border: 1px solid #ccc;
-            border-radius: 20px;
-            margin-right: 10px;
-        }
-
-        #input-container button {
-            padding: 12px 25px;
-            border: none;
-            background-color: #007bff;
-            color: #fff;
-            border-radius: 20px;
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-        
-        #input-container button:hover {
-            background-color: #0056b3;
-        }
-
-        #input-container input:disabled,
-        #input-container button:disabled {
-            background-color: #e9ecef;
-            cursor: not-allowed;
-        }
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f4f4f4; }
+        #chat-container { max-width: 800px; margin: auto; background: #fff; padding: 20px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        #messages { height: 600px; overflow-y: scroll; border-bottom: 1px solid #ddd; padding: 10px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 10px; }
+        .message { padding: 10px; border-radius: 8px; border: 1px solid #ddd; max-width: 80%; }
+        .message .source { font-weight: bold; margin-bottom: 5px; }
+        .message .content { white-space: pre-wrap; word-wrap: break-word; }
+        .System { background-color: #f0e6ff; border-color: #d6b4ff; align-self: center; text-align: center; font-style: italic;}
+        .error { background-color: #ffe6e6; border-color: #ffb4b4; }
+        .You { background-color: #e6f7ff; border-color: #b4e0ff; align-self: flex-end; }
+        .Writer { background-color: #e6fff2; border-color: #b4ffd9; align-self: flex-start; }
+        .Editor { background-color: #fffbe6; border-color: #fff1b4; align-self: flex-start; }
+        .Reviewer { background-color: #f6f6f6; border-color: #e0e0e0; align-self: flex-start; }
+        .Human_ContentOverseer, .Human_ProjectOverseer, .ContentTeam_SoM, .QualityTeam_SoM { display: none; }
+        #input-area { display: flex; }
+        #message-input { flex-grow: 1; padding: 10px; border: 1px solid #ddd; border-radius: 5px 0 0 5px; }
+        #send-button { padding: 10px 20px; border: none; background: #007bff; color: white; cursor: pointer; }
     </style>
 </head>
-
 <body>
     <div id="chat-container">
         <div id="messages"></div>
-        <div id="input-container">
-            <input type="text" id="message-input" placeholder="Enter your task to begin...">
-            <button id="send-button" onclick="sendMessage()">Send</button>
+        <div id="input-area">
+            <input type="text" id="message-input" placeholder="Enter your task...">
+            <button id="send-button">Send</button>
         </div>
     </div>
-
     <script>
-        let ws;
+        const ws = new WebSocket("ws://localhost:8000/ws/chat");
+        const messages = document.getElementById('messages');
+        const messageInput = document.getElementById('message-input');
+        const sendButton = document.getElementById('send-button');
+        let lastUserMessage = "";
 
-        function connect() {
-            ws = new WebSocket('ws://localhost:8000/ws/chat');
+        function addMessage(source, content) {
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message', source.replace(/ /g, '_'));
 
-            ws.onmessage = function (event) {
-                const message = JSON.parse(event.data);
-
-                if (message.type === 'UserInputRequestedEvent') {
-                    // For input requests, display the content with a special source label and style.
-                    displayMessage(message.content, 'System Guide'); 
-                    enableInput("Your response...");
-                } else {
-                    // For all other messages, use the original source.
-                    const source = message.source ? (message.source.name || message.source) : 'system';
-                    displayMessage(message.content, source);
-                    if (message.content === "Task completed.") {
-                        ws.close();
-                    }
-                }
-            };
-
-            ws.onerror = function(error) {
-                displayMessage("WebSocket error occurred. Please refresh the page.", 'error');
-                enableInput("Enter your task to begin...");
-            };
-
-            ws.onclose = function() {
-                displayMessage("Connection closed. You can start a new task.", 'system');
-                enableInput("Enter your task to begin...");
-                ws = null; // Reset ws so a new connection can be made
-            };
+            const sourceElement = document.createElement('div');
+            sourceElement.classList.add('source');
+            sourceElement.textContent = source;
+            
+            const contentElement = document.createElement('div');
+            contentElement.classList.add('content');
+            contentElement.textContent = content;
+            
+            messageElement.appendChild(sourceElement);
+            messageElement.appendChild(contentElement);
+            messages.appendChild(messageElement);
+            messages.scrollTop = messages.scrollHeight;
         }
 
-        document.getElementById('message-input').addEventListener('keydown', function (event) {
-            if (event.key === 'Enter' && !event.target.disabled) {
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            if (data.type === 'human_input_request') {
+                setTimeout(() => {
+                    addMessage('System', data.content);
+                    messageInput.placeholder = "Your response...";
+                }, 500);
+            } else if (data.type === 'message') {
+                // Do not display the user's own message again
+                if (data.source !== 'Human_ContentOverseer' && data.source !== 'Human_ProjectOverseer') {
+                    addMessage(data.source, data.content);
+                }
+            } else if (data.type === 'error') {
+                addMessage('Error', data.content);
+            }
+        };
+
+        function sendMessage() {
+            const message = messageInput.value;
+            if (message) {
+                addMessage('You', message); // Display user's message immediately
+                ws.send(JSON.stringify({ content: message }));
+                messageInput.value = '';
+                messageInput.placeholder = "Waiting for agent response...";
+            }
+        }
+
+        sendButton.onclick = sendMessage;
+        messageInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
                 sendMessage();
             }
         });
-
-        function sendMessage() {
-            const input = document.getElementById('message-input');
-            const message = input.value;
-            if (!message) return;
-
-            const payload = JSON.stringify({ content: message, source: 'user' });
-
-            if (!ws || ws.readyState !== WebSocket.OPEN) {
-                connect();
-                // Wait for the connection to open before sending
-                ws.onopen = () => {
-                    ws.send(payload);
-                    // DO NOT display the message here. Wait for the backend to echo it.
-                    input.value = '';
-                    disableInput("Agents are collaborating...");
-                };
-            } else {
-                ws.send(payload);
-                // DO NOT display the message here. Wait for the backend to echo it.
-                input.value = '';
-                disableInput("Agents are collaborating...");
-            }
-        }
-
-        function displayMessage(content, source) {
-            const messagesContainer = document.getElementById('messages');
-            const messageElement = document.createElement('div');
-            
-            let displaySource = source;
-            let roleClass = 'assistant'; // Default class
-
-            // Standardize display for user messages and system guides
-            if (source.toLowerCase().includes('user') || source.toLowerCase().includes('human_')) {
-                roleClass = 'user';
-                displaySource = 'user';
-            } else if (source === 'System Guide') {
-                roleClass = 'system'; // Use system styling for the guide
-                displaySource = 'System Guide';
-            } else if (source.toLowerCase() === 'system' || source.toLowerCase() === 'error') {
-                roleClass = source.toLowerCase();
-            }
-            
-            messageElement.className = `message ${roleClass}`;
-            
-            const labelElement = document.createElement('span');
-            labelElement.className = 'label';
-            labelElement.textContent = displaySource;
-
-            const contentElement = document.createElement('div');
-            contentElement.className = 'content';
-            // Use innerHTML to render newlines correctly
-            contentElement.innerHTML = content.replace(/\n/g, '<br>');
-
-            messageElement.appendChild(labelElement);
-            messageElement.appendChild(contentElement);
-            messagesContainer.appendChild(messageElement);
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        }
-
-        function disableInput(placeholder) {
-            const input = document.getElementById('message-input');
-            const button = document.getElementById('send-button');
-            input.disabled = true;
-            button.disabled = true;
-            input.placeholder = placeholder;
-        }
-
-        function enableInput(placeholder) {
-            const input = document.getElementById('message-input');
-            const button = document.getElementById('send-button');
-            input.disabled = false;
-            button.disabled = false;
-            input.placeholder = placeholder;
-            input.focus();
-        }
     </script>
 </body>
-
 </html>
