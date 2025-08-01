@@ -98,18 +98,18 @@ cd society_of_minds_autogen
 
 ```bash
 # Windows
-python -m venv .venv
-.venv\Scripts\activate
-
-# macOS/Linux
-python -m venv .venv
+pip install uv
+uv venv -p python3.11
+# On windows - powershell or cmd 
+.venv/Scripts/activate
+# macOS/Linux or Windows git bash
 source .venv/bin/activate
 ```
 
 ### 3. Install Dependencies
 
 ```bash
-pip install -r requirements.txt
+uv pip install -r requirements.txt
 ```
 
 ### 4. Environment Configuration
