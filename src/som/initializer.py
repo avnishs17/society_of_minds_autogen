@@ -45,7 +45,7 @@ def create_outer_team_coordination(model_client, content_input_func, quality_inp
     outer_team = RoundRobinGroupChat(
         participants=[som_content_agent, som_quality_agent, outer_user_proxy],
         termination_condition=outer_termination,
-        max_turns=4
+        max_turns=10
     )
 
     return outer_team

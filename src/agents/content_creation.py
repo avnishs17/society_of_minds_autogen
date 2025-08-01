@@ -30,7 +30,7 @@ def create_content_creation_team(model_client, human_input_function):
     inner_team_a = RoundRobinGroupChat(
         participants=[writer_agent, editor_agent, user_proxy_inner_a],
         termination_condition=TextMentionTermination(text="APPROVE"),
-        max_turns=4
+        max_turns=10
     )
 
     return inner_team_a

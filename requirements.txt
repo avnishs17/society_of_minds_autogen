@@ -4,7 +4,6 @@ autogen-ext[openai]
 python-dotenv
 tiktoken
 ipykernel
-streamlit
 asyncio
 structlog
 fastapi
