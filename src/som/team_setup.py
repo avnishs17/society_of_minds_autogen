@@ -1,4 +1,5 @@
 from autogen_agentchat.agents import AssistantAgent, UserProxyAgent, SocietyOfMindAgent
+from functools import partial
 from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_agentchat.conditions import TextMentionTermination
 from src.prompt_library.system_messages import WRITER_SYSTEM_MESSAGE, EDITOR_SYSTEM_MESSAGE, REVIEWER_SYSTEM_MESSAGE
@@ -24,7 +25,7 @@ async def create_content_creation_team(model_client, human_input_function):
     user_proxy_inner_a = UserProxyAgent(
         name='Human_ContentOverseer',
         description='Human oversight for content decisions',
-        input_func=human_input_function
+        input_func=partial(human_input_function, "Human_ContentOverseer")
     )
     
     inner_termination_a = TextMentionTermination("APPROVE")
@@ -69,23 +70,17 @@ async def create_outer_team_coordination(model_client, human_input_function):
         response_prompt='Summarize the content creation process and provide the final content.'
     )
     
-    som_quality_agent = SocietyOfMindAgent(
-        name="QualityTeam_SoM",
-        team=quality_team,
-        model_client=model_client,
-        response_prompt='Summarize the quality review process and provide final approval status.'
-    )
     
     outer_user_proxy = UserProxyAgent(
         name='Human_ProjectOverseer',
         description='Human oversight for final decisions',
-        input_func=human_input_function
+        input_func=partial(human_input_function, "Human_ProjectOverseer")
     )
     
     outer_termination = TextMentionTermination("FINAL_APPROVAL")
 
     outer_team = RoundRobinGroupChat(
-        participants=[som_content_agent, som_quality_agent, outer_user_proxy],
+        participants=[som_content_agent, quality_team, outer_user_proxy],
         termination_condition=outer_termination,
         max_turns=10
     )

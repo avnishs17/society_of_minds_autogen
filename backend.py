@@ -1,5 +1,3 @@
-import asyncio
-import json
 import logging
 import os
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -39,15 +37,14 @@ async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     logger.info("WebSocket connection accepted.")
 
-    async def human_input_function(prompt: str, cancellation_token=None):
+    async def human_input_function(agent_name: str, prompt: str, cancellation_token=None):
         """Function to get human input from the WebSocket."""
-        logger.info(f"Requesting human input for prompt: {prompt}")
+        logger.info(f"Requesting human input from {agent_name}: {prompt}")
 
-        # Determine which team is asking for input based on the prompt
-        if "ContentTeam" in prompt:
+        if agent_name == "Human_ContentOverseer":
             team_name = "Content Creation Team"
             instructions = "Enter 'APPROVE' to approve the content, or provide feedback for revision."
-        elif "QualityTeam" in prompt:
+        elif agent_name == "Human_QualityOverseer":
             team_name = "Quality Assurance Team"
             instructions = "Enter 'APPROVE' to approve the quality, or provide feedback."
         else:
@@ -74,10 +71,20 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.info(f"Received initial task: {task}")
 
         # Stream the conversation
+        is_first_message = True
         async for message in outer_team.run_stream(task=task):
+            if is_first_message:
+                is_first_message = False
+                continue  # Skip sending the initial task back to the client
+
             if isinstance(message, TextMessage):
                 source = message.source if hasattr(message, 'source') and message.source else "System"
                 content = message.content.strip()
+
+                # Don't send back the human's input, as it's already displayed on the frontend
+                if source in ["Human_ContentOverseer", "Human_ProjectOverseer"]:
+                    continue
+
                 if content:
                     logger.info(f"Sending message from {source}: {content}")
                     await websocket.send_json({"type": "message", "source": source, "content": content})
