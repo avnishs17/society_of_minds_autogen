@@ -88,6 +88,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 if content:
                     logger.info(f"Sending message from {source}: {content}")
                     await websocket.send_json({"type": "message", "source": source, "content": content})
+        
+        logger.info("Conversation ended successfully.")
+        await websocket.send_json({
+            "type": "message", 
+            "source": "System", 
+            "content": "Conversation ended."
+        })
 
     except WebSocketDisconnect:
         logger.info("Client disconnected.")
